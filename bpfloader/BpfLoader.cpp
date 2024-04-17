@@ -247,6 +247,15 @@ int writeProcSysFile(const char *filename, const char *value) {
     return 0;
 }
 
+static void onMainFail() {
+    ALOGE("=== CRITICAL FAILURE LOADING BPF PROGRAMS ===");
+    ALOGE("If this triggers reliably, you're probably missing kernel options or patches.");
+    ALOGE("If this triggers randomly, you might be hitting some memory allocation "
+            "problems or startup script race.");
+    ALOGE("--- DO NOT EXPECT SYSTEM TO BOOT SUCCESSFULLY ---");
+    android::base::SetProperty("bpf.progs_loaded", "1");
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     android::base::InitLogging(argv, &android::base::KernelLogger);
@@ -285,7 +294,9 @@ int main(int argc, char** argv) {
     //  due to ordering issues)
     for (const auto& location : locations) {
         if (createSysFsBpfSubDir(location.prefix)) {
-            goto fail;
+            // goto fail;
+            onMainFail();
+            return 0;
         }
     }
 
@@ -295,14 +306,18 @@ int main(int argc, char** argv) {
     // and as such this will likely always be the case.
     // Thus we need to manually create the /sys/fs/bpf/loader subdirectory.
     if (createSysFsBpfSubDir("loader")) {
-        goto fail;
+        onMainFail();
+        return 0;
+        // goto fail;
         return 1;
     }
 
     // Load all ELF objects, create programs and maps, and pin them
     for (const auto& location : locations) {
         if (loadAllElfObjects(location) != 0) {
-            goto fail;
+            // goto fail;
+            onMainFail();
+            return 0;
         }
     }
 
@@ -320,13 +335,5 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    return 0;
-fail:
-    ALOGE("=== CRITICAL FAILURE LOADING BPF PROGRAMS ===");
-    ALOGE("If this triggers reliably, you're probably missing kernel options or patches.");
-    ALOGE("If this triggers randomly, you might be hitting some memory allocation "
-            "problems or startup script race.");
-    ALOGE("--- DO NOT EXPECT SYSTEM TO BOOT SUCCESSFULLY ---");
-    android::base::SetProperty("bpf.progs_loaded", "1");
     return 0;
 }
